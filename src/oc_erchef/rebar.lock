@@ -12,7 +12,7 @@
   1},
  {<<"chef_authn">>,
   {git,"https://github.com/chef/chef_authn",
-       {ref,"e7850d0925b01761d8085ee8b44dafbbe1b297a4"}},
+       {ref,"3cbc0765422ba3185f85ee35e8653483a40b05f3"}},
   0},
  {<<"darklaunch">>,
   {git,"https://github.com/chef/opscode-darklaunch-erlang",
