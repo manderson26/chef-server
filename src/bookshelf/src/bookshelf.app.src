@@ -36,6 +36,7 @@
                     mini_s3,
                     inets,
                     lager,
+                    sqerl,
                     opscoderl_wm,
                     iso8601,
                     runtime_tools,
