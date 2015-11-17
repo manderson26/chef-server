@@ -40,8 +40,9 @@ CREATE UNIQUE INDEX file_names_file_id_index ON file_names(data_id);
 -- deduplication.
 --
 CREATE TABLE IF NOT EXISTS file_data(
-    data_id          bigserial PRIMARY KEY,
-    complete	     boolean,
+    data_id     bigserial PRIMARY KEY,
+    complete	boolean,
+    chunk_count int,
     -- Normal practice would be to constrain hash_* fields to be NOT
     -- NULL UNIQUE, but if we are streaming the file we won't know
     -- those until the end. We could use a dummy hash and change it
@@ -49,14 +50,13 @@ CREATE TABLE IF NOT EXISTS file_data(
     -- relying on it being unique is unwise.
     hash_md5    bytea, -- 160 bits as binary (20B)
 
+    -- Might want to store sha256 as well/instead, because the S3 v4 api has a field for that.
     -- This exists to allow deduplication. sha512 is faster than
     -- sha256, and 32 extra bytes per file seems pretty low impact.
     -- 256 bits would be ample for simple collision by accident, but
     -- 512 offers resistance against dedicated attack.
     -- rule of thumb for dedup is prob of collision is p = number_of_files^2/(2*2^bits) or
-    hash_sha512 bytea, -- 512 bits as binary (64B)
-
-    chunk_count int
+    hash_sha512 bytea -- 512 bits as binary (64B)
 );
 
 
