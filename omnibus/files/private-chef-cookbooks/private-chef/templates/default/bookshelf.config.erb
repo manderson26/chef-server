@@ -82,6 +82,26 @@
               {stream_download, <%= @stream_download %>},
               {log_dir, "<%= @log_directory %>"}
              ]},
+ {sqerl, [
+           {db_driver_mod, sqerl_pgsql_client},
+           {ip_mode, [ <%=PrivateChef['use_ipv6'] ? "ipv6,ipv4" : "ipv4" %> ] },
+           %% Database connection parameters
+           {db_host, "<%= @postgresql['vip'] %>"},
+           {db_port, <%=  @postgresql['port'] %>},
+           {db_user, "<%= @postgresql['sql_user'] %>"},
+           {db_pass, "<%= @postgresql['sql_password'] %>"},
+           {db_name, "bookshelf" },
+           {idle_check, 10000},
+           {pooler_timeout, <%= @db_pooler_timeout %>},
+           {db_timeout, <%= node['private_chef']['opscode-erchef']['sql_db_timeout'] %>},
+           {prepared_statements, {oc_chef_sql, statements, [pgsql]}},
+           {column_transforms,
+                              [{<<"created_at">>,
+                                {sqerl_transformers, convert_YMDHMS_tuple_to_datetime}},
+                               {<<"updated_at">>,
+                                {sqerl_transformers, convert_YMDHMS_tuple_to_datetime}}]
+           }
+          ]},
   {webmachine, [
           {log_handlers, [
 %%% Log handling is disabled, because it is redundant (nginx also logs requests)
