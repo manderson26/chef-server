@@ -93,7 +93,7 @@
            {db_name, "bookshelf" },
            {idle_check, 10000},
            {pooler_timeout, <%= @db_pooler_timeout %>},
-           {db_timeout, <%= node['private_chef']['opscode-erchef']['sql_db_timeout'] %>},
+           {db_timeout, <%= @sql_db_timeout %>},
            {prepared_statements, {oc_chef_sql, statements, [pgsql]}},
            {column_transforms,
                               [{<<"created_at">>,
@@ -102,7 +102,15 @@
                                 {sqerl_transformers, convert_YMDHMS_tuple_to_datetime}}]
            }
           ]},
-  {webmachine, [
+ {pooler, [
+           {pools, [[{name, sqerl},
+                     {max_count, <%= @db_pool_size %> },
+                     {init_count, <%= @db_pool_size %> },
+                     {queue_max, <%= @db_pool_queue_max %>},
+                     {start_mfa, {sqerl_client, start_link, []}}]]}
+           %%,{metrics_module, folsom_metrics}
+          ]},
+ {webmachine, [
           {log_handlers, [
 %%% Log handling is disabled, because it is redundant (nginx also logs requests)
 %%% If debug logging is needed, this can be uncommented to start logging somewhat verbose logs
