@@ -86,7 +86,7 @@ list_buckets() ->
     end.
 
 list_bucket(_BucketName) ->
-    []. % TODO TBI
+    []. % TODO TBI; returns #object{} struct list
 
 -spec create_file(binary(), binary()) -> integer().
 create_file(Bucket, Name) ->

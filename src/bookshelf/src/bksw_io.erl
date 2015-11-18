@@ -62,32 +62,25 @@
 -spec bucket_list() -> [#bucket{}] | [].
 bucket_list() ->
     ?LOG_DEBUG("reading bucket list"),
-    Root = bksw_conf:disk_store(),
-    make_buckets(Root, [Dir || Dir <- filelib:wildcard("*", bksw_util:to_string(Root)),
-                               filelib:is_dir(filename:join([Root, Dir]))]).
-
--spec entry_list(binary()) -> [#object{}] | [].
-entry_list(Bucket) ->
-    BucketPath = bksw_io_names:bucket_path(Bucket),
-    ?LOG_DEBUG("reading entries for bucket '~p'", [Bucket]),
-    %% As of R16, second arg to filelib:wildcard must be string
-    filter_entries(Bucket, filelib:wildcard("*/*/*/*/*", bksw_util:to_string(BucketPath))).
+    bksw_sql:list_buckets().
 
 -spec bucket_exists(binary()) -> boolean().
 bucket_exists(Bucket) ->
-    filelib:is_dir(bksw_io_names:bucket_path(Bucket)).
+    case bksw_sql:find_bucket(Bucket) of
+        {ok, none} ->
+            false;
+        {ok, _} ->
+            true
+end.
 
 -spec bucket_create(binary()) -> boolean().
 bucket_create(Bucket) ->
-    case bucket_exists(Bucket) of
+    case bksw_sql:bucket_exists(Bucket) of
         false ->
-            BucketPath = bksw_io_names:bucket_path(Bucket),
-            case file:make_dir(BucketPath) of
-                ok ->
-                    ?LOG_DEBUG("created bucket '~p' at '~p'", [Bucket, BucketPath]),
+            case bksq_sql:create_bucket(Bucket) of
+                {ok, 1} ->
                     true;
-                {error, Reason} ->
-                    ?LOG_ERROR("Error creating bucket ~p on path ~p: ~p~n", [Bucket, BucketPath, Reason]),
+                Error ->
                     false
             end;
         true ->
@@ -96,17 +89,19 @@ bucket_create(Bucket) ->
 
 -spec bucket_delete(binary()) -> boolean().
 bucket_delete(Bucket) ->
-    delete_bucket_dir(Bucket).
-
-delete_bucket_dir(Bucket) ->
-    case os:cmd("rm -rf " ++ bksw_io_names:bucket_path(binary_to_list(Bucket))) of
-        [] ->
-            ?LOG_DEBUG("deleted bucket ~p", [Bucket]),
+    case bksw_sql:delete_bucket(Bucket) of
+        ok ->
             true;
-        Why ->
-            ?LOG_ERROR("bucket delete failed for bucket ~p: ~p", [Bucket, Why]),
+        _ ->
             false
     end.
+
+-spec entry_list(binary()) -> [#object{}] | [].
+entry_list(Bucket) ->
+    {ok, BucketId} = bksw_sql:find_bucket(Bucket),
+    ?LOG_DEBUG("reading entries for bucket '~p' #~p", [Bucket, BucketId]),
+    %% As of R16, second arg to filelib:wildcard must be string
+    bksw_sql:list_bucket(Bucket).
 
 -spec entry_delete(binary(), binary()) -> boolean().
 entry_delete(Bucket, Entry) ->
