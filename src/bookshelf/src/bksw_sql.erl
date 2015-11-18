@@ -14,7 +14,7 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 %% implied.  See the License for the specific language governing
 %% permissions and limitations under the License.
--module(bksq_sql).
+-module(bksw_sql).
 
 -include("internal.hrl").
 
@@ -86,7 +86,12 @@ list_buckets() ->
     end.
 
 list_bucket(_BucketName) ->
-    []. % TODO TBI; returns #object{} struct list
+    case sqerl:select(list_buckets, [], first_as_rows, [bucket_name]) of
+        {ok, Buckets} ->
+            Buckets;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 -spec create_file(binary(), binary()) -> integer().
 create_file(Bucket, Name) ->
