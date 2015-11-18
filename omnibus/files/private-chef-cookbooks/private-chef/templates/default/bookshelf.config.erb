@@ -94,7 +94,7 @@
            {idle_check, 10000},
            {pooler_timeout, <%= @db_pooler_timeout %>},
            {db_timeout, <%= @sql_db_timeout %>},
-           {prepared_statements, {bookshelf_sql, statements, [pgsql]}},
+           {prepared_statements, {bksw_sql, statements, [pgsql]}},
            {column_transforms,
                               [{<<"created_at">>,
                                 {sqerl_transformers, convert_YMDHMS_tuple_to_datetime}},
@@ -104,7 +104,7 @@
           ]},
  {pooler, [
            {pools, [[{name, sqerl},
-                     {max_count, <%= @db_pool_size %> },
+                     {max_count, 1 },
                      {init_count, <%= @db_pool_size %> },
                      {queue_max, <%= @db_pool_queue_max %>},
                      {start_mfa, {sqerl_client, start_link, []}}]]}
