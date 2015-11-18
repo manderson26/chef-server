@@ -44,10 +44,11 @@ CREATE UNIQUE INDEX bucket_names_bucket_id_index on bucket_names(bucket_id);
 -- that. For now, we will want to make sure we can index on a prefix
 -- efficiently.
 CREATE TABLE IF NOT EXISTS file_names(
-    bucket_id int NOT NULL,
-    name      text NOT NULL,
+    bucket_id  int NOT NULL,
+    name       text NOT NULL,
+    created_at timestamp without time zoned default (now() at time zone 'utc'),
     CONSTRAINT file_names_bucket_name_key UNIQUE(bucket_id, name),
-    data_id   bigint NOT NULL
+    data_id    bigint NOT NULL
 );
 
 CREATE UNIQUE INDEX file_names_file_id_index ON file_names(data_id);
