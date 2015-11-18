@@ -94,7 +94,7 @@
            {idle_check, 10000},
            {pooler_timeout, <%= @db_pooler_timeout %>},
            {db_timeout, <%= @sql_db_timeout %>},
-           {prepared_statements, {oc_chef_sql, statements, [pgsql]}},
+           {prepared_statements, {bookshelf_sql, statements, [pgsql]}},
            {column_transforms,
                               [{<<"created_at">>,
                                 {sqerl_transformers, convert_YMDHMS_tuple_to_datetime}},
