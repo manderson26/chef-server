@@ -14,7 +14,7 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 %% implied.  See the License for the specific language governing
 %% permissions and limitations under the License.
--module(bookshelf_sql).
+-module(bksq_sql).
 
 -include("internal.hrl").
 
@@ -27,6 +27,7 @@
           create_bucket/1,
           delete_bucket/1,
           find_bucket/1,
+          list_buckets/0,
           list_bucket/1,
           create_file/2,
           add_file_chunk/3,
@@ -72,6 +73,14 @@ find_bucket(BucketName) ->
     case sqerl:select(find_bucket, [BucketName], first_as_scalar, [bucket_id]) of
         {ok, BucketId} ->
             {ok, BucketId};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+list_buckets() ->
+    case sqerl:select(list_buckets, [], first_as_rows, [bucket_name]) of
+        {ok, Buckets} ->
+            Buckets;
         {error, Reason} ->
             {error, Reason}
     end.
