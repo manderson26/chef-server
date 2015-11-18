@@ -63,3 +63,13 @@
                   entry_ref :: #entryref{},
                   entry_md :: #object{}
               }).
+
+-record(db_file, {
+          bucket  :: binary(),
+          name    :: binary(),
+          data_id :: integer(),
+          complete :: boolean(),
+          chunk_count :: integer(),
+          hash_md5 :: binary(),
+          hash_sha512 :: binary()
+         }).

@@ -1,18 +1,30 @@
 -- poor man's sqitch
 -- sudo su opscode-pgsql -c "/opt/opscode/embedded/bin/psql bookshelf -f /host/src/bookshelf/schema_wip.sql"
+
 DROP INDEX file_names_file_id_index;
 DROP INDEX file_data_hash_md5_index;
 DROP INDEX file_data_hash_sha512_index;
 DROP INDEX file_chunks_id_chunk_index;
 
+DROP INDEX bucket_names_bucket_id_index CASCADE;
+
 ALTER TABLE file_names DROP CONSTRAINT file_names_file_id_fk;
 ALTER TABLE file_chunks DROP CONSTRAINT file_chunks_id_fk;
+
+DROP FUNCTION IF EXISTS create_file(file_names.bucket_id%TYPE, file_names.name%TYPE);
 
 DROP TABLE IF EXISTS file_chunks;
 DROP TABLE IF EXISTS file_data;
 DROP TABLE IF EXISTS file_names;
+DROP TABLE IF EXISTS bucket_names;
 
-DROP FUNCTION IF EXISTS create_file(file_names.bucket%TYPE, file_names.name%TYPE);
+GRANT ALL PRIVILEGES ON DATABASE bookshelf TO opscode_chef;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO opscode_chef
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public to opscode_chef;;
+-- GRANT ALL PRIVILEGES ON ALL TABLEs in SCHEMA public 
+GRANT ALL PRIVILEGES ON TABLE file_names TO opscode_chef;
+GRANT ALL PRIVILEGES ON TABLE file_data TO opscode_chef;
+GRANT ALL PRIVILEGES ON TABLE file_chunks TO opscode_chef;
 
 --
 -- Encoding choices:
@@ -20,19 +32,28 @@ DROP FUNCTION IF EXISTS create_file(file_names.bucket%TYPE, file_names.name%TYPE
 -- md5  160    20    40
 -- sha  256    32    64
 -- sha  512    64   128
+CREATE TABLE IF NOT EXISTS bucket_names(
+   bucket_name text NOT NULL PRIMARY KEY,
+   bucket_id serial NOT NULL
+);
+
+CREATE UNIQUE INDEX bucket_names_bucket_id_index on bucket_names(bucket_id);
 
 -- By convention we can infer the org id from the name used. Some
 -- maintenance operations would be much faster if we could index on
 -- that. For now, we will want to make sure we can index on a prefix
 -- efficiently.
 CREATE TABLE IF NOT EXISTS file_names(
-    bucket  text NOT NULL,
-    name    text NOT NULL,
-    CONSTRAINT file_names_bucket_name_key UNIQUE(bucket, name),
-    data_id bigint NOT NULL
+    bucket_id int NOT NULL,
+    name      text NOT NULL,
+    CONSTRAINT file_names_bucket_name_key UNIQUE(bucket_id, name),
+    data_id   bigint NOT NULL
 );
 
 CREATE UNIQUE INDEX file_names_file_id_index ON file_names(data_id);
+
+-- When the bucket is deleted, we should delete all the files in it.
+ALTER TABLE file_names ADD CONSTRAINT file_names_bucket_names_fk FOREIGN KEY (bucket_id) REFERENCES bucket_names(bucket_id) ON DELETE CASCADE;
 
 --
 -- This is separate from the file table because that is apparently a
@@ -91,7 +112,7 @@ ALTER TABLE file_chunks ADD CONSTRAINT file_chunks_id_fk FOREIGN KEY (data_id) R
 
 -- Insert file function to ease sqerl interface
 CREATE OR REPLACE FUNCTION create_file(
-       new_bucket file_names.bucket%TYPE,
+       bucket_id file_names.bucket_id%TYPE,
        new_name   file_names.name%TYPE )
 RETURNS file_data.data_id%TYPE -- what happens if exists already? TODO
 AS $$
@@ -99,7 +120,7 @@ DECLARE
    new_id file_data.data_id%TYPE;
 BEGIN
    INSERT INTO file_data (complete) VALUES ('false') returning data_id INTO new_id;
-   INSERT INTO file_names (bucket, "name", data_id) VALUES (new_bucket, new_name, new_id);
+   INSERT INTO file_names (bucket_id, "name", data_id) VALUES (bucket_id, new_name, new_id);
    RETURN new_id;
 END;
 $$
