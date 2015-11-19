@@ -65,11 +65,15 @@
               }).
 
 -record(db_file, {
-          bucket  :: binary(),
-          name    :: binary(),
-          data_id :: integer(),
-          complete :: boolean(),
+          bucket_name :: binary(),
+          name        :: binary(),
+          created_at  :: any(), % refine
+          data_id     :: integer(),
+          complete    :: boolean(),
+          data_size   :: integer(),
           chunk_count :: integer(),
-          hash_md5 :: binary(),
+          hash_md5    :: binary(),
           hash_sha512 :: binary()
          }).
+
+-define(DB_FILE_TX_FM, [db_file, [bucket_name, name, created_at, data_id, complete, data_size, chunk_count, hash_md5, hash_sha512]]).

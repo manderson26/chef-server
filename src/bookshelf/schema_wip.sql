@@ -1,6 +1,8 @@
 -- poor man's sqitch
 -- sudo su opscode-pgsql -c "/opt/opscode/embedded/bin/psql bookshelf -f /host/src/bookshelf/schema_wip.sql"
 
+SET ROLE opscode_chef;
+
 DROP INDEX file_names_file_id_index;
 DROP INDEX file_data_hash_md5_index;
 DROP INDEX file_data_hash_sha512_index;
@@ -18,13 +20,14 @@ DROP TABLE IF EXISTS file_data;
 DROP TABLE IF EXISTS file_names;
 DROP TABLE IF EXISTS bucket_names;
 
-GRANT ALL PRIVILEGES ON DATABASE bookshelf TO opscode_chef;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO opscode_chef
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public to opscode_chef;;
--- GRANT ALL PRIVILEGES ON ALL TABLEs in SCHEMA public 
-GRANT ALL PRIVILEGES ON TABLE file_names TO opscode_chef;
-GRANT ALL PRIVILEGES ON TABLE file_data TO opscode_chef;
-GRANT ALL PRIVILEGES ON TABLE file_chunks TO opscode_chef;
+--GRANT ALL PRIVILEGES ON DATABASE bookshelf TO opscode_chef;
+--ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO opscode_chef
+--GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO opscode_chef;
+--GRANT ALL PRIVILEGES ON ALL TABLES in SCHEMA public TO opscode_chef;
+--GRANT ALL PRIVILEGES ON TABLE file_names TO opscode_chef;
+--GRANT ALL PRIVILEGES ON TABLE file_data TO opscode_chef;
+--GRANT ALL PRIVILEGES ON TABLE file_chunks TO opscode_chef;
+--GRANT ALL PRIVILEGES ON TABLE bucket_names
 
 --
 -- Encoding choices:
@@ -46,7 +49,7 @@ CREATE UNIQUE INDEX bucket_names_bucket_id_index on bucket_names(bucket_id);
 CREATE TABLE IF NOT EXISTS file_names(
     bucket_id  int NOT NULL,
     name       text NOT NULL,
-    created_at timestamp without time zoned default (now() at time zone 'utc'),
+    created_at timestamp without time zone default (now() at time zone 'utc'),
     CONSTRAINT file_names_bucket_name_key UNIQUE(bucket_id, name),
     data_id    bigint NOT NULL
 );
@@ -64,6 +67,7 @@ ALTER TABLE file_names ADD CONSTRAINT file_names_bucket_names_fk FOREIGN KEY (bu
 CREATE TABLE IF NOT EXISTS file_data(
     data_id     bigserial PRIMARY KEY,
     complete	boolean,
+    data_size   bigint, 
     chunk_count int,
     -- Normal practice would be to constrain hash_* fields to be NOT
     -- NULL UNIQUE, but if we are streaming the file we won't know
@@ -127,3 +131,7 @@ END;
 $$
 LANGUAGE plpgsql VOLATILE;
 
+CREATE OR REPLACE VIEW expanded_files AS SELECT bucket_name, fd.* FROM bucket_names b INNER JOIN
+       (SELECT bucket_id, name, created_at, d.* FROM
+               file_names f INNER JOIN file_data d ON f.data_id = d.data_id) fd
+	ON b.bucket_id = fd.bucket_id;	
