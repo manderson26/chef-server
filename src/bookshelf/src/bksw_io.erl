@@ -24,16 +24,7 @@
 
 -export([entry_list/1,
          entry_delete/2,
-         entry_exists/2,
-         open_for_read/2,
-         open_for_write/2,
-         entry_md/1,
-         entry_md/2,
-         write/2,
-         read/2,
-         finish_read/1,
-         abort_write/1,
-         finish_write/1]).
+         entry_exists/2]).
 
 -export([
          disk_format_version/0,
@@ -62,32 +53,25 @@
 -spec bucket_list() -> [#bucket{}] | [].
 bucket_list() ->
     ?LOG_DEBUG("reading bucket list"),
-    Root = bksw_conf:disk_store(),
-    make_buckets(Root, [Dir || Dir <- filelib:wildcard("*", bksw_util:to_string(Root)),
-                               filelib:is_dir(filename:join([Root, Dir]))]).
-
--spec entry_list(binary()) -> [#object{}] | [].
-entry_list(Bucket) ->
-    BucketPath = bksw_io_names:bucket_path(Bucket),
-    ?LOG_DEBUG("reading entries for bucket '~p'", [Bucket]),
-    %% As of R16, second arg to filelib:wildcard must be string
-    filter_entries(Bucket, filelib:wildcard("*/*/*/*/*", bksw_util:to_string(BucketPath))).
+    bksw_sql:list_buckets().
 
 -spec bucket_exists(binary()) -> boolean().
 bucket_exists(Bucket) ->
-    filelib:is_dir(bksw_io_names:bucket_path(Bucket)).
+    case bksw_sql:find_bucket(Bucket) of
+        {ok, none} ->
+            false;
+        {ok, _} ->
+            true
+end.
 
 -spec bucket_create(binary()) -> boolean().
 bucket_create(Bucket) ->
-    case bucket_exists(Bucket) of
+    case bksw_sql:bucket_exists(Bucket) of
         false ->
-            BucketPath = bksw_io_names:bucket_path(Bucket),
-            case file:make_dir(BucketPath) of
-                ok ->
-                    ?LOG_DEBUG("created bucket '~p' at '~p'", [Bucket, BucketPath]),
+            case bksw_sql:create_bucket(Bucket) of
+                {ok, 1} ->
                     true;
-                {error, Reason} ->
-                    ?LOG_ERROR("Error creating bucket ~p on path ~p: ~p~n", [Bucket, BucketPath, Reason]),
+                _Error ->
                     false
             end;
         true ->
@@ -96,32 +80,21 @@ bucket_create(Bucket) ->
 
 -spec bucket_delete(binary()) -> boolean().
 bucket_delete(Bucket) ->
-    delete_bucket_dir(Bucket).
-
-delete_bucket_dir(Bucket) ->
-    case os:cmd("rm -rf " ++ bksw_io_names:bucket_path(binary_to_list(Bucket))) of
-        [] ->
-            ?LOG_DEBUG("deleted bucket ~p", [Bucket]),
+    case bksw_sql:delete_bucket(Bucket) of
+        ok ->
             true;
-        Why ->
-            ?LOG_ERROR("bucket delete failed for bucket ~p: ~p", [Bucket, Why]),
+        _ ->
             false
     end.
+
+-spec entry_list(binary()) -> [#object{}] | [].
+entry_list(Bucket) ->
+    ?LOG_DEBUG("reading entries for bucket '~p' #~p", [Bucket]),
+    bksw_sql:list_bucket(Bucket).
 
 -spec entry_delete(binary(), binary()) -> boolean().
 entry_delete(Bucket, Entry) ->
-    entry_delete(bksw_io_names:entry_path(Bucket, Entry)).
-
--spec entry_delete(binary()) -> boolean().
-entry_delete(FullPath) ->
-    case file:delete(FullPath) of
-        ok ->
-            ?LOG_DEBUG("deleted bucket entry: ~p", [FullPath]),
-            true;
-        Error ->
-            error_logger:error_msg("Error deleting bucket entry ~p: ~p~n", [FullPath, Error]),
-            false
-    end.
+    bksw_sql:delete_file(Bucket, Entry).
 
 -spec entry_exists(binary(), binary()) -> boolean().
 entry_exists(Bucket, Path) ->
@@ -129,203 +102,6 @@ entry_exists(Bucket, Path) ->
     Ans = filelib:is_regular(FullPath),
     ?LOG_DEBUG("entry_exists ~p ~p ~p", [Bucket, Path, Ans]),
     Ans.
-
--spec open_for_write(binary(), binary()) -> {ok, #entryref{}} | {error, term()}.
-open_for_write(Bucket, Entry) ->
-    FileName = bksw_io_names:write_path(Bucket, Entry),
-    filelib:ensure_dir(FileName),
-    case file:open(FileName, [exclusive, write, binary, raw]) of
-        {ok, Fd} ->
-            ?LOG_DEBUG("open_for_write ~p ~p at ~p", [Bucket, Entry, FileName]),
-            %% Magic number to guard against file corruption
-            case file:write(Fd, ?MAGIC_NUMBER) of
-                ok ->
-                    {ok, ?TOTAL_HEADER_SIZE_BYTES} = file:position(Fd, {bof, ?TOTAL_HEADER_SIZE_BYTES}),
-                    {ok, #entryref{fd=Fd, path=FileName,
-                                   bucket=Bucket, entry=Entry,
-                                   ctx=erlang:md5_init()}};
-                Error ->
-                    ?LOG_ERROR("header write failed ~p ~p at ~p: ~p",
-                               [Bucket, Entry, FileName, Error]),
-                    file:close(Fd),
-                    Error
-            end;
-        Error ->
-            ?LOG_ERROR("open_for_write failed ~p ~p at ~p: ~p",
-                       [Bucket, Entry, FileName, Error]),
-            Error
-    end.
-
--spec open_for_read(binary(), binary()) -> {ok, #entryref{}} | {error, term()}.
-open_for_read(Bucket, Entry) ->
-    FileName = bksw_io_names:entry_path(Bucket, Entry),
-    case file:open(FileName, [read, binary, raw]) of
-        {ok, Fd} ->
-            ?LOG_DEBUG("open_for_read entry ~p ~p at ~p",
-                       [Bucket, Entry, FileName]),
-            case file:read(Fd, 2) of
-                %% Verify magic number is intact
-                {ok, ?MAGIC_NUMBER} ->
-                    %% Skip past checksum data for now
-                    {ok, ?TOTAL_HEADER_SIZE_BYTES} = file:position(Fd, {bof, ?TOTAL_HEADER_SIZE_BYTES}),
-                    {ok, #entryref{fd=Fd, path=FileName, bucket=Bucket, entry=Entry}};
-                ReadError ->
-                    ?LOG_ERROR("open_for_read corrupt file ~p ~p at ~p",
-                               [Bucket, Entry, FileName, ReadError]),
-                    file:close(Fd),
-                    {error, corrupt_file}
-            end;
-        Error ->
-            ?LOG_ERROR("open_for_read failed for ~p ~p at ~p: ~p",
-                       [Bucket, Entry, FileName, Error]),
-            Error
-    end.
-
--spec entry_md(binary(), binary()) -> {ok, #object{}} | {error, term()}.
-entry_md(Bucket, Entry) ->
-    {ok, Ref} = open_for_read(Bucket, bksw_io_names:decode(Entry)),
-    Result = entry_md(Ref),
-    finish_read(Ref),
-    ?LOG_DEBUG("entry_md read ~p ~p", [Bucket, Entry]),
-    Result.
-
--spec entry_md(#entryref{}) -> {ok, #object{}} | error.
-entry_md(#entryref{fd=Fd, path=Path, bucket=Bucket, entry=Entry}) ->
-    case file:read_file_info(Path) of
-        {ok, #file_info{mtime = Date, size = Size}} ->
-            [UTC | _] = %% FIXME This is a hack until R15B
-                calendar:local_time_to_universal_time_dst(Date),
-            case file_md5(Fd) of
-                error ->
-                    ?LOG_ERROR("entry_md md5 read failed ~p ~p at ~p",
-                               [Bucket, Entry, Path]),
-                    error;
-                {ok, MD5} ->
-                    {ok, #object{path=Path,
-                                 name=Entry,
-                                 date=UTC,
-                                 size=Size - ?TOTAL_HEADER_SIZE_BYTES,
-                                 digest=MD5}}
-            end;
-        Error ->
-            ?LOG_ERROR("entry_md failed ~p ~p at ~p: ~p",
-                       [Bucket, Entry, Path, Error]),
-            erlang:error(Error)
-    end.
-
-
--spec read(#entryref{}, pos_integer()) -> {ok, binary() | eof} | {error, file:posix() | badarg | terminated}.
-read(#entryref{fd=Fd}, Size) ->
-    case file:read(Fd, Size) of
-        eof ->
-            {ok, eof};
-        Result ->
-            Result
-    end.
-
--spec finish_read(#entryref{}) -> ok.
-finish_read(#entryref{fd=Fd, bucket=Bucket, entry=Entry}) ->
-    ?LOG_DEBUG("finish_read ~p ~p", [Bucket, Entry]),
-    file:close(Fd).
-
--spec write(#entryref{}, binary()) -> {ok, #entryref{}} | {error, file:posix() | badarg | terminated}.
-write(#entryref{fd=Fd, ctx=Ctx,
-                bucket=Bucket, entry=Entry}=ERef, Data) when is_binary(Data) ->
-    case file:write(Fd, Data) of
-        ok ->
-            {ok, ERef#entryref{ctx=erlang:md5_update(Ctx, Data)}};
-        Error ->
-            ?LOG_ERROR("write failed ~p ~p: ~p",
-                       [Bucket, Entry, Error]),
-            Error
-    end.
-
--spec abort_write(#entryref{}) -> ok | {error, file:posix() | badarg}.
-abort_write(#entryref{fd=Fd, path=Path}) ->
-    file:close(Fd),
-    file:delete(Path).
-
--spec finish_write(#entryref{}) -> {ok, binary()} | {error, file:posix() | badarg}.
-finish_write(#entryref{fd=Fd, path=Path, bucket=Bucket, entry=Entry, ctx=Ctx}) ->
-    case file:sync(Fd) of
-        ok ->
-            Digest = erlang:md5_final(Ctx),
-            %% Seek to metadata section of file
-            {ok, ?MAGIC_NUMBER_SIZE_BYTES} = file:position(Fd, {bof, ?MAGIC_NUMBER_SIZE_BYTES}),
-            file:write(Fd, Digest),
-            file:close(Fd),
-            FinalPath = bksw_io_names:entry_path(Bucket, Entry),
-            case filelib:ensure_dir(FinalPath) of
-                ok ->
-                    case file:rename(Path, FinalPath) of
-                        ok ->
-                            ?LOG_DEBUG("write completed ~p ~p", [Bucket, Entry]),
-                            {ok, Digest};
-                        Error ->
-                            ?LOG_ERROR("rename failed ~p ~p (~p > ~p): ~p",
-                                       [Bucket, Entry, Path, FinalPath, Error]),
-                            Error
-                    end;
-                DirError ->
-                    ?LOG_ERROR("mkdir failed ~p ~p (~p): ~p",
-                               [Bucket, Entry, FinalPath, DirError]),
-                    DirError
-            end;
-        Error ->
-            ?LOG_ERROR("sync failed ~p ~p: ~p", [Bucket, Entry, Error]),
-            file:close(Fd),
-            Error
-    end.
-
-%% Internal functions
-filter_entries(_Bucket, []) ->
-    [];
-filter_entries(Bucket, Entries) ->
-    {ok, Ex} = re:compile(?WRITE_BUFS, [unicode]),
-    filter_entries(Bucket, Entries, Ex, []).
-
-filter_entries(_Bucket, [], _Ex, Accum) ->
-    lists:reverse(Accum);
-filter_entries(Bucket, [Entry|T], Ex, Accum) ->
-    case re:run(Entry, Ex, [{capture, none}]) of
-        nomatch ->
-            case entry_md(Bucket, filename:basename(Entry)) of
-                {ok, Obj} ->
-                    filter_entries(Bucket, T, Ex, [Obj|Accum]);
-                _Error ->
-                    filter_entries(Bucket, T, Ex, Accum)
-            end;
-        match ->
-            filter_entries(Bucket, T, Ex, Accum)
-    end.
-
-file_md5(Fd) ->
-    {ok, CurrPos} = file:position(Fd, {cur, 0}),
-    {ok, ?MAGIC_NUMBER_SIZE_BYTES} = file:position(Fd, {bof, ?MAGIC_NUMBER_SIZE_BYTES}),
-    case file:read(Fd, 16) of
-        eof ->
-            error;
-        {ok, MD5} ->
-            {ok, CurrPos} = file:position(Fd, {bof, CurrPos}),
-            {ok, MD5}
-    end.
-
-make_buckets(Root, BucketDirs) ->
-    make_buckets(Root, BucketDirs, []).
-
-make_buckets(_Root, [], Buckets) ->
-    lists:reverse(Buckets);
-make_buckets(Root, [BucketDir|T], Buckets) ->
-    Buckets1 = case file:read_file_info(filename:join([Root, BucketDir])) of
-                   {ok, #file_info{mtime=Date}} ->
-                       [UTC | _] = %% FIXME This is a hack until R15B
-                           calendar:local_time_to_universal_time_dst(Date),
-                       [#bucket{name=bksw_io_names:decode(BucketDir),
-                                date=UTC}|Buckets];
-                   _Error ->
-                       Buckets
-               end,
-    make_buckets(Root, T, Buckets1).
 
 %% @doc Return the on disk format version. If no version file is
 %% found, returns `{version, 0}' which is the first shipping format.

@@ -39,11 +39,25 @@
 
 -include("bksw_obj.hrl").
 
--record(entryref, {fd :: file:io_device(),
-                   path :: string() | binary(),
+-record(entryref, {path :: string() | binary(),
                    bucket :: binary(),
                    entry :: binary(),
                    ctx :: undefined | binary()}).
+
+-record(db_file, {
+          bucket_name :: binary(),
+          bucket_id   :: integer(),
+          name        :: binary(),
+          created_at  :: any(), % refine
+          data_id     :: integer(),
+          complete    :: boolean(),
+          data_size   :: integer(),
+          chunk_count :: integer(),
+          hash_md5    :: binary(),
+          hash_sha512 :: binary()
+         }).
+
+-define(DB_FILE_TX_FM, [db_file, [bucket_name, bucket_id, name, created_at, data_id, complete, data_size, chunk_count, hash_md5, hash_sha512]]).
 
 -record(context, {
                   %% AWS credentials
@@ -60,6 +74,11 @@
                   %% balancer
                   reqid_header_name :: string(),
 
-                  entry_ref :: #entryref{},
-                  entry_md :: #object{}
+                  entry_md :: #db_file{},
+                  next_chunk_to_stream :: integer(),
+
+                  hash_md5_context :: any(), % refine
+                  hash_sha256_context :: any(),
+                  hash_sha512_context :: any() % refine
               }).
+

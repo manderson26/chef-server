@@ -598,6 +598,12 @@ default['private_chef']['bookshelf']['access_key_id'] = "generated-by-default"
 default['private_chef']['bookshelf']['secret_access_key'] = "generated-by-default"
 # Default: set to Host: header. Override to hardcode a url, "http://..."
 default['private_chef']['bookshelf']['external_url'] = :host_header
+default['private_chef']['bookshelf']['db_pool_size'] = 20
+default['private_chef']['bookshelf']['db_pool_queue_max'] = 20
+default['private_chef']['bookshelf']['db_pooler_timeout'] = 2000
+default['private_chef']['bookshelf']['sql_db_timeout'] = 5000
+
+
 
 ###
 # Chef Identity
